@@ -1,5 +1,17 @@
 //! Implement logic in OOP-fashion as to practice using classes
 
+//! Drag & drop interfaces
+interface Draggable {
+	dragStartHandler(event: DragEvent): void;
+	dragEndHandler(event: DragEvent): void;
+}
+
+interface DragTarget {
+	dragOverHandler(event: DragEvent): void;
+	dropHandler(event: DragEvent): void;
+	dragLeaveHandler(event: DragEvent): void;
+}
+
 // Project Type
 enum ProjectStatus {
 	Active,
@@ -55,8 +67,19 @@ class ProjectState extends State<Project> {
 		);
 		this.projects.push(newProject);
 		//!loop through the listeners-array
+		this.updateListeners();
+	}
+
+	moveProject(projectId: string, newStatus: ProjectStatus) {
+		const project = this.projects.find((prj) => prj.id === projectId);
+		if (project && project.status !== newStatus) {
+			project.status = newStatus;
+			this.updateListeners();
+		}
+	}
+
+	private updateListeners() {
 		for (const listenerFn of this.listeners) {
-			//!using slice() to return a copy of the array to ensure immutability
 			listenerFn(this.projects.slice());
 		}
 	}
@@ -155,7 +178,10 @@ abstract class Component<T extends HTMLElement, U extends HTMLElement> {
 	abstract configure(): void;
 	abstract renderContent(): void;
 }
-class ProjectItem extends Component<HTMLUListElement, HTMLLIElement> {
+class ProjectItem
+	extends Component<HTMLUListElement, HTMLLIElement>
+	implements Draggable
+{
 	private project: Project;
 
 	get persons() {
@@ -174,7 +200,20 @@ class ProjectItem extends Component<HTMLUListElement, HTMLLIElement> {
 		this.renderContent();
 	}
 
-	configure() {}
+	@Autobind
+	dragStartHandler(event: DragEvent) {
+		event.dataTransfer!.setData("text/plain", this.project.id);
+		event.dataTransfer!.effectAllowed = "move";
+	}
+
+	dragEndHandler(_: DragEvent) {
+		console.log("DragEnd");
+	}
+
+	configure() {
+		this.element.addEventListener("dragstart", this.dragStartHandler);
+		this.element.addEventListener("dragend", this.dragEndHandler);
+	}
 	renderContent() {
 		this.element.querySelector("h2")!.textContent = this.project.title;
 		this.element.querySelector("h3")!.textContent = this.persons + " assigned";
@@ -183,7 +222,10 @@ class ProjectItem extends Component<HTMLUListElement, HTMLLIElement> {
 }
 
 // ProjectList class
-class ProjectList extends Component<HTMLDivElement, HTMLElement> {
+class ProjectList
+	extends Component<HTMLDivElement, HTMLElement>
+	implements DragTarget
+{
 	//TODO: Move into new Component class
 	// templateElement: HTMLTemplateElement;
 	// hostElement: HTMLDivElement;
@@ -198,7 +240,38 @@ class ProjectList extends Component<HTMLDivElement, HTMLElement> {
 		this.assignedProjects = [];
 		this.configure();
 		this.renderContent();
+		this.attach(false);
+		this.renderContent();
+	}
 
+	@Autobind
+	dragOverHandler(event: DragEvent) {
+		if (event.dataTransfer && event.dataTransfer.types[0] === "text/plain") {
+			event.preventDefault();
+			const listEl = this.element.querySelector("ul")!;
+			listEl.classList.add("droppable");
+		}
+	}
+
+	@Autobind
+	dropHandler(event: DragEvent) {
+		const projId = event.dataTransfer!.getData("text/plain");
+		projectState.moveProject(
+			projId,
+			this.type === "active" ? ProjectStatus.Active : ProjectStatus.Finished
+		);
+	}
+
+	@Autobind
+	dragLeaveHandler(_: DragEvent): void {
+		const listEl = this.element.querySelector("ul")!;
+		listEl.classList.remove("droppable");
+	}
+
+	configure() {
+		this.element.addEventListener("dragover", this.dragOverHandler);
+		this.element.addEventListener("dragleave", this.dragLeaveHandler);
+		this.element.addEventListener("drop", this.dropHandler);
 		//! add a filter-function to our listeners in projectState.
 		//! the listener-function added takes an array of type Project,
 		//! which filters the project-list
@@ -212,8 +285,6 @@ class ProjectList extends Component<HTMLDivElement, HTMLElement> {
 			this.assignedProjects = relevantProjects;
 			this.renderProjects();
 		});
-		this.attach(false);
-		this.renderContent();
 	}
 
 	renderProjects() {
@@ -227,8 +298,6 @@ class ProjectList extends Component<HTMLDivElement, HTMLElement> {
 			new ProjectItem(this.element.querySelector("ul")!.id, prjItem);
 		}
 	}
-
-	configure() {}
 
 	//! fill the blank spaces in the template
 	renderContent() {
