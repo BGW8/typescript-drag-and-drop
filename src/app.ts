@@ -1,5 +1,65 @@
 //! Implement logic in OOP-fashion as to practice using classes
 
+// Project Type
+enum ProjectStatus {
+	Active,
+	Finished,
+}
+
+class Project {
+	constructor(
+		public id: string,
+		public title: string,
+		public description: string,
+		public people: number,
+		public status: ProjectStatus
+	) {}
+}
+
+// Project State Management
+
+type Listener = (items: Project[]) => void;
+
+class ProjectState {
+	private listeners: Listener[] = [];
+	private projects: Project[] = [];
+	private static instance: ProjectState;
+
+	private constructor() {}
+
+	//! Guarantees that we only have one object of the type in the entire application
+	static getInstance() {
+		if (this.instance) {
+			return this.instance;
+		}
+		this.instance = new ProjectState();
+		return this.instance;
+	}
+
+	addListener(listenerFn: Listener) {
+		this.listeners.push(listenerFn);
+	}
+
+	addProject(title: string, description: string, numOfPeople: number) {
+		const newProject = new Project(
+			Math.random().toString(),
+			title,
+			description,
+			numOfPeople,
+			ProjectStatus.Active
+		);
+		this.projects.push(newProject);
+		//!loop through the listeners-array
+		for (const listenerFn of this.listeners) {
+			//!using slice() to return a copy of the array to ensure immutability
+			listenerFn(this.projects.slice());
+		}
+	}
+}
+
+//! Instantiating a constant 'projectState' to a singleton to handle state
+const projectState = ProjectState.getInstance();
+
 //Validation
 interface Validatable {
 	value: string | number;
@@ -10,7 +70,7 @@ interface Validatable {
 	max?: number;
 }
 
-function validate(validateableInput: Validatable) {
+const validate = (validateableInput: Validatable) => {
 	let isValid: boolean = true;
 	if (validateableInput.required) {
 		isValid = isValid && validateableInput.value.toString().trim().length !== 0;
@@ -42,6 +102,120 @@ function validate(validateableInput: Validatable) {
 		isValid = isValid && validateableInput.value < validateableInput.max;
 	}
 	return isValid;
+};
+
+//TODO: Create a base Class to consolidate the properties and other class members
+//TODO: which is duplicated between other classes.
+//? Could we create a Generic Class ?
+// Component Base Class
+class Component<T extends HTMLElement, U extends HTMLElement> {
+	templateElement: HTMLTemplateElement;
+	hostElement: T;
+	element: U;
+
+	constructor(
+		templateId: string,
+		hostElementId: string,
+		insertAtStart: boolean,
+		newElementId?: string
+	) {
+		this.templateElement = document.getElementById(
+			templateId
+		) as HTMLTemplateElement;
+		this.hostElement = document.getElementById(hostElementId) as T;
+
+		const importedNode = document.importNode(
+			this.templateElement.content,
+			true
+		);
+
+		this.element = importedNode.firstElementChild as U;
+		if (newElementId) {
+			this.element.id = newElementId;
+		}
+
+		this.attach(insertAtStart);
+	}
+
+	private attach(insertAtBeginning: boolean) {
+		this.hostElement.insertAdjacentElement(
+			insertAtBeginning ? "afterbegin" : "beforeend",
+			this.element
+		);
+	}
+}
+
+// ProjectList class
+class ProjectList {
+	templateElement: HTMLTemplateElement;
+	hostElement: HTMLDivElement;
+	element: HTMLElement;
+	assignedProjects: any[];
+
+	//! Could use an enum-type instead of a string literal type, although with
+	//! string literals we can use them in out renderProjects-method below
+	//! to assign classes
+	constructor(private type: "active" | "finished") {
+		//TODO: Improve DRYness instead of copy-pasta
+		//! START - copy-pasta-ish from the ProjectInput-construcor
+		this.templateElement = document.getElementById(
+			"project-list"
+		)! as HTMLTemplateElement;
+
+		const importedNode = document.importNode(
+			this.templateElement.content,
+			true
+		);
+		this.element = importedNode.firstElementChild as HTMLElement;
+		this.element.id = `${this.type}-projects`;
+
+		this.hostElement = document.getElementById("app") as HTMLDivElement;
+		//! END - copy-pasta-ish from the ProjectInput-construcor
+
+		this.assignedProjects = [];
+
+		//! add a filter-function to our listeners in projectState.
+		//! the listener-function added takes an array of type Project,
+		//! which filters the project-list
+		projectState.addListener((projects: Project[]) => {
+			const relevantProjects = projects.filter((prj) => {
+				if (this.type === "active") {
+					return prj.status === ProjectStatus.Active;
+				}
+				return prj.status === ProjectStatus.Finished;
+			});
+			this.assignedProjects = relevantProjects;
+			this.renderProjects();
+		});
+		this.attach();
+		this.renderContent();
+	}
+
+	private renderProjects() {
+		const listEl = document.getElementById(
+			`${this.type}-projects-list`
+		)! as HTMLUListElement;
+		//! clearing all the list-items at every render makes it so
+		//! we're not duplicating items when addig new ones
+		listEl.innerHTML = "";
+		for (const prjItem of this.assignedProjects) {
+			const listItem = document.createElement("li");
+			listItem.textContent = prjItem.title;
+			listEl.appendChild(listItem);
+		}
+	}
+
+	//! fill the blank spaces in the template
+	private renderContent() {
+		const listId = `${this.type}-projects-list`;
+		this.element.querySelector("ul")!.id = listId;
+		this.element.querySelector("h2")!.textContent =
+			this.type.toUpperCase() + " PROJECTS";
+	}
+	//! responsbile for rendering the list to the DOM
+	private attach() {
+		this.hostElement.insertAdjacentElement("beforeend", this.element);
+	}
 }
 
 //Autobind decorator
@@ -145,7 +319,8 @@ class ProjectInput {
 		const userInput = this.gatherUserInput();
 		if (Array.isArray(userInput)) {
 			const [title, desc, people] = userInput;
-			console.log([title, desc, people]);
+			projectState.addProject(title, desc, people);
+			this.clearInputs();
 		}
 		this.clearInputs();
 	}
@@ -177,4 +352,9 @@ class ProjectInput {
 	}
 }
 
+//! create & render  the project-input field
 const prjInput = new ProjectInput();
+
+//! create and render the project lists
+const activePrjList = new ProjectList("active");
+const finishedPrjList = new ProjectList("finished");
