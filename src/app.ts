@@ -104,11 +104,13 @@ const validate = (validateableInput: Validatable) => {
 	return isValid;
 };
 
+// Component Base Class
 //TODO: Create a base Class to consolidate the properties and other class members
 //TODO: which is duplicated between other classes.
 //? Could we create a Generic Class ?
-// Component Base Class
-class Component<T extends HTMLElement, U extends HTMLElement> {
+//? Make it abstract as to make sure it never is instantiated , but always only
+//? used for inheritance , sort of like a blueprint class for other classes.
+abstract class Component<T extends HTMLElement, U extends HTMLElement> {
 	templateElement: HTMLTemplateElement;
 	hostElement: T;
 	element: U;
@@ -137,42 +139,34 @@ class Component<T extends HTMLElement, U extends HTMLElement> {
 		this.attach(insertAtStart);
 	}
 
-	private attach(insertAtBeginning: boolean) {
+	protected attach(insertAtBeginning: boolean) {
 		this.hostElement.insertAdjacentElement(
 			insertAtBeginning ? "afterbegin" : "beforeend",
 			this.element
 		);
 	}
+
+	//! Forces any class inheriting from Component to implement below methods
+	abstract configure(): void;
+	abstract renderContent(): void;
 }
 
 // ProjectList class
-class ProjectList {
-	templateElement: HTMLTemplateElement;
-	hostElement: HTMLDivElement;
-	element: HTMLElement;
-	assignedProjects: any[];
+class ProjectList extends Component<HTMLDivElement, HTMLElement> {
+	//TODO: Move into new Component class
+	// templateElement: HTMLTemplateElement;
+	// hostElement: HTMLDivElement;
+	// element: HTMLElement;
+	assignedProjects: Project[];
 
 	//! Could use an enum-type instead of a string literal type, although with
 	//! string literals we can use them in out renderProjects-method below
 	//! to assign classes
 	constructor(private type: "active" | "finished") {
-		//TODO: Improve DRYness instead of copy-pasta
-		//! START - copy-pasta-ish from the ProjectInput-construcor
-		this.templateElement = document.getElementById(
-			"project-list"
-		)! as HTMLTemplateElement;
-
-		const importedNode = document.importNode(
-			this.templateElement.content,
-			true
-		);
-		this.element = importedNode.firstElementChild as HTMLElement;
-		this.element.id = `${this.type}-projects`;
-
-		this.hostElement = document.getElementById("app") as HTMLDivElement;
-		//! END - copy-pasta-ish from the ProjectInput-construcor
-
+		super("project-list", "app", false, `${type}-projects`);
 		this.assignedProjects = [];
+		this.configure();
+		this.renderContent();
 
 		//! add a filter-function to our listeners in projectState.
 		//! the listener-function added takes an array of type Project,
@@ -187,11 +181,11 @@ class ProjectList {
 			this.assignedProjects = relevantProjects;
 			this.renderProjects();
 		});
-		this.attach();
+		this.attach(false);
 		this.renderContent();
 	}
 
-	private renderProjects() {
+	renderProjects() {
 		const listEl = document.getElementById(
 			`${this.type}-projects-list`
 		)! as HTMLUListElement;
@@ -205,16 +199,14 @@ class ProjectList {
 		}
 	}
 
+	configure() {}
+
 	//! fill the blank spaces in the template
-	private renderContent() {
+	renderContent() {
 		const listId = `${this.type}-projects-list`;
 		this.element.querySelector("ul")!.id = listId;
 		this.element.querySelector("h2")!.textContent =
 			this.type.toUpperCase() + " PROJECTS";
-	}
-	//! responsbile for rendering the list to the DOM
-	private attach() {
-		this.hostElement.insertAdjacentElement("beforeend", this.element);
 	}
 }
 
@@ -232,32 +224,14 @@ function Autobind(_: any, _2: string, descriptor: PropertyDescriptor) {
 }
 
 // ProjectInput Class
-class ProjectInput {
-	templateElement: HTMLTemplateElement;
-	hostElement: HTMLDivElement;
-	element: HTMLFormElement;
+class ProjectInput extends Component<HTMLDivElement, HTMLFormElement> {
 	titleInputElement: HTMLInputElement;
 	descriptionInputElement: HTMLInputElement;
 	peopleInputElement: HTMLInputElement;
 	//! Seperate selection/Access-logic from calculation-logic
 	//! Place selection-logic and base setup within the constructor
 	constructor() {
-		this.templateElement = document.getElementById(
-			"project-input"
-		) as HTMLTemplateElement;
-
-		this.hostElement = document.getElementById("app") as HTMLDivElement;
-
-		//! import a copy the child-element of the template-element together with
-		//! all of it's children
-		const importedNode = document.importNode(
-			this.templateElement.content,
-			true
-		);
-
-		this.element = importedNode.firstElementChild as HTMLFormElement;
-		//! assign id to apply our styling
-		this.element.id = "user-input";
+		super("project-input", "app", true, "user-input");
 
 		this.titleInputElement = this.element.querySelector(
 			"#title"
@@ -270,9 +244,31 @@ class ProjectInput {
 		) as HTMLInputElement;
 
 		this.configure();
-		this.attach();
 	}
 	//! Create private methods to contain and handle our caclulation logic
+
+	renderContent() {}
+
+	configure() {
+		//! Experimenting with 'this' keyword and its' value depending on context
+		// this.element.addEventListener("submit", function (event: Event) {
+		// 	event.preventDefault();
+		// 	console.log(this);
+		// 	console.log((this.querySelector("#title") as HTMLInputElement).value);
+		// });
+		//
+		// this.element.addEventListener("submit", (event: Event) => {
+		// 	event.preventDefault();
+		// 	console.log(this);
+		// 	console.log(this.titleInputElement.value);
+		// });
+		//
+		// this.element.addEventListener("submit", this.submitHandler.bind(this));
+
+		//! By using a decorator which we apply to our sumbitHandler, we
+		//! don't need to bind 'this' to the method when passing it as event listener.
+		this.element.addEventListener("submit", this.submitHandler);
+	}
 
 	private gatherUserInput(): [string, string, number] | void {
 		const enteredTitle = this.titleInputElement.value;
@@ -325,31 +321,7 @@ class ProjectInput {
 		this.clearInputs();
 	}
 
-	private configure() {
-		//! Experimenting with 'this' keyword and its' value depending on context
-		// this.element.addEventListener("submit", function (event: Event) {
-		// 	event.preventDefault();
-		// 	console.log(this);
-		// 	console.log((this.querySelector("#title") as HTMLInputElement).value);
-		// });
-		//
-		// this.element.addEventListener("submit", (event: Event) => {
-		// 	event.preventDefault();
-		// 	console.log(this);
-		// 	console.log(this.titleInputElement.value);
-		// });
-		//
-		// this.element.addEventListener("submit", this.submitHandler.bind(this));
-
-		//! By using a decorator which we apply to our sumbitHandler, we
-		//! don't need to bind 'this' to the method when passing it as event listener.
-		this.element.addEventListener("submit", this.submitHandler);
-	}
-
 	//!
-	private attach() {
-		this.hostElement.insertAdjacentElement("afterbegin", this.element);
-	}
 }
 
 //! create & render  the project-input field
